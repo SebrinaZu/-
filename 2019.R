@@ -12,10 +12,6 @@ library(magic)
 library(Matrix)
 library(MASS)
 
-library(plot3D)
-library(lpSolve)
-library(ioanalysis)
-
 X <- as.data.frame(read_excel("2019.xlsx", sheet = "x1", range = "P1:P154"))
 va <- as.data.frame(read_excel("2019.xlsx", sheet = "v1", range = "G1:G154"))
 tu <- as.data.frame(read_excel("2019.xlsx", sheet = "u1", range = "F2:G155"))
@@ -24,30 +20,47 @@ tu <- as.data.frame(read_excel("2019.xlsx", sheet = "u1", range = "F2:G155"))
 # 1 tu 一致性调整  ----
 #-----------------------------------------------------------------------------#
 
-install.packages("nloptr")
 library(nloptr)
 
-initial_va <- as.numeric(as.matrix(va))
-initial_tu <- as.numeric(as.matrix(tu))
+# Initialize global variables to store iteration history
+objective_history <- numeric()
+constraint_history <- numeric()
+iteration <- 0
 
 objective_function <- function(x) {
   va_adj <- x[1:153]
   tu_adj <- matrix(x[154:459], nrow = 153, byrow = TRUE)
-  sum(abs(va_adj - initial_va)) + sum(abs(tu_adj - initial_tu))
+  obj_value <- sum(abs(va_adj - initial_va)) + sum(abs(tu_adj - initial_tu))
+  
+  # Log the objective function value
+  objective_history <<- c(objective_history, obj_value)
+  
+  # Print the current iteration and objective function value
+  iteration <<- iteration + 1
+  cat(sprintf("Iteration: %d, Objective Value: %f\n", iteration, obj_value))
+  
+  return(obj_value)
 }
 
 constraint_function <- function(x) {
   va_adj <- x[1:153]
   tu_adj <- matrix(x[154:459], nrow = 153, ncol = 2)
   gdp_va <- sum(va_adj)
-  gdp_tu <- rowSums(as.matrix(tu_adj[, 1])) - rowSums(as.matrix(tu_adj[, 2]))
-  return(abs(gdp_va - gdp_tu) - 100)
+  gdp_tu <- sum(tu_adj[, 1]) - sum(tu_adj[, 2])
+  constraint_value <- abs(gdp_va - gdp_tu) - 100
+  
+  # Log the constraint function value
+  constraint_history <<- c(constraint_history, constraint_value)
+  
+  # Print the current iteration and constraint function value
+  cat(sprintf("Iteration: %d, Constraint Value: %f\n", iteration, constraint_value))
+  
+  return(constraint_value)
 }
 
-# 初始值
+# Initial values
 x0 <- c(initial_va, initial_tu)
-
-lower_bounds <- x0 - abs(x0) * 0.2 # 允许上下20%的浮动
+lower_bounds <- x0 - abs(x0) * 0.2
 upper_bounds <- x0 + abs(x0) * 0.2
 
 opts <- list("algorithm" = "NLOPT_LN_COBYLA", 
@@ -60,6 +73,7 @@ result <- nloptr(x0 = x0,
                  ub = upper_bounds, 
                  eval_g_ineq = constraint_function, 
                  opts = opts)
+
 
 #-----------------------------------------------------------------------------#
 # 2 A matrix  ----
@@ -231,3 +245,5 @@ Z_2 <- GRAS(A = Z_20, r_bar, s_bar)
 #-----------------------------------------------------------------------------#
 
 Z <- Z_1 + Z_2
+
+fwrite(Z, "Z_0709.csv")
