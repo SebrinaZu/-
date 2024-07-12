@@ -118,7 +118,7 @@ io20<-data.frame(china_2020_153)
 row.names(io18) <- io18$Code
 io18<-as.matrix(io18)
 
-write.csv(io18,"io18_data.csv",row.names=TRUE)
+#write.csv(io18,"io18_data.csv",row.names=TRUE)
 
 ```
 
@@ -154,7 +154,7 @@ ras18 <- ras(io18.IO, io18.IO$X, ras_rowsum, ras_colsum, verbose = TRUE)
 
 ```{r}
 output18<-ras18 %*% diag(ras_colsum)
-
+write.csv(IO_18, file = "IO_18_output.csv", row.names = TRUE)
 percentage_diff <- (output18 - Z18) / Z18 * 100
 ```
 
