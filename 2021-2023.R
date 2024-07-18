@@ -240,7 +240,7 @@ for (year in 2021:2023){
   
 }
 
-GRAS <- function(A, r_bar, s_bar, iteration_maximum = 5000, accuracy = 1e-6, epsilon = 1e-8) {
+GRAS <- function(A, r_bar, s_bar, iteration_maximum = 1000, accuracy = 1e-6, epsilon = 1e-8) {
   # Define the P and N matrices
   P <- ifelse(A > 0, A, 0)
   N <- ifelse(A < 0, -A, 0)
@@ -249,24 +249,28 @@ GRAS <- function(A, r_bar, s_bar, iteration_maximum = 5000, accuracy = 1e-6, eps
   m <- nrow(A)
   n <- ncol(A)
   R <- diag(1, m, m)
-  S <- diag(1, n, n)
+  S <- diag(NA, n, n)
+  
+  r_star <- r_bar * exp(1)
+  s_star <- s_bar * exp(1)
   
   # Define functions for updating r_i and s_j
-  rho_i <- function(s, r_bar_i, p_i, n_i) {
-    (r_bar_i + sqrt(r_bar_i^2 + 4 * p_i * n_i)) / (2 * p_i)
+  rho_i <- function(s, r_star_i, p_i, n_i) {
+    (r_star_i + sqrt(r_star_i^2 + 4 * p_i * n_i)) / (2 * p_i)
   }
   
-  sigma_j <- function(r, s_bar_j, p_j, n_j) {
-    (s_bar_j + sqrt(s_bar_j^2 + 4 * p_j * n_j)) / (2 * p_j)
+  sigma_j <- function(r, s_star_j, p_j, n_j) {
+    (s_star_j + sqrt(s_star_j^2 + 4 * p_j * n_j)) / (2 * p_j)
   }
   
   # Iteration
   for (iteration in 1:iteration_maximum) {
+   
     # Update S
     for (j in 1:n) {
       p_j <- sum(P[, j] * diag(R))
       n_j <- sum(N[, j] / diag(R))
-      S[j, j] <- sigma_j(diag(R), s_bar[j], p_j, n_j)
+      S[j, j] <- sigma_j(diag(R), s_star[j], p_j, n_j)
       if (is.na(S[j, j]) || is.infinite(S[j, j]) || abs(S[j, j]) < epsilon) {
         S[j, j] <- epsilon
       }
@@ -276,20 +280,30 @@ GRAS <- function(A, r_bar, s_bar, iteration_maximum = 5000, accuracy = 1e-6, eps
     for (i in 1:m) {
       p_i <- sum(P[i, ] * diag(S))
       n_i <- sum(N[i, ] / diag(S))
-      R[i, i] <- rho_i(diag(S), r_bar[i], p_i, n_i)
+      R[i, i] <- rho_i(diag(S), r_star[i], p_i, n_i)
       if (is.na(R[i, i]) || is.infinite(R[i, i]) || abs(R[i, i]) < epsilon) {
         R[i, i] <- epsilon
       }
     }
     
     # Check for convergence
-    RS <- R %*% P %*% S - ginv(R + epsilon * diag(m)) %*% N %*% ginv(S + epsilon * diag(n))
-    error_r <- norm(RS %*% rep(1, n) - matrix(r_bar, nrow = m, ncol = 1), "F") / norm(r_bar, "F")
-    error_s <- norm(t(rep(1, m)) %*% RS - matrix(s_bar, nrow = 1, ncol = n), "F") / norm(s_bar, "F")
+    i <- rep(1, n)
+    RS <- R %*% P %*% S
+    RN <- ginv(R + epsilon * diag(m)) %*% N %*% ginv(S + epsilon * diag(n))
+    RN <- solve(R) %*% N %*% solve(S)
+    i_RS <- RS %*% i
+    i_RN <- RN %*% i
+    error_r <- norm(i_RS - i_RN - r_star, "F") / norm(r_star, "F")
+    
+    i_RS_trans <- i %*% RS
+    i_RN_trans <- i %*% RN
+    error_s <- norm(i_RS_trans - i_RN_trans - s_star, "F") / norm(s_star, "F")
+    
+    print(paste("Iteration:", iteration, "Error_r:", error_r, "Error_s:", error_s))
+    
     if (error_r < accuracy && error_s < accuracy) {
       break
     }
-    print(iteration)
   }
   
   # Calculate the updated matrix X with constraints
@@ -300,9 +314,9 @@ GRAS <- function(A, r_bar, s_bar, iteration_maximum = 5000, accuracy = 1e-6, eps
   for (i in 1:m) {
     for (j in 1:n) {
       if (A[i, j] >= 0) {
-        X[i, j] <- r[i] * A[i, j] * s[j]
+        X[i, j] <- r[i] * A[i, j] * s[j] / exp(1)
       } else {
-        X[i, j] <- (1 / r[i]) * A[i, j] * (1 / s[j])
+        X[i, j] <- (1 / r[i]) * A[i, j] * (1 / s[j]) / exp(1)
       }
       # Ensure the updated values are within ±20% of the original values
       lower_bound <- A[i, j] - abs(A[i, j]) * 0.2
@@ -314,8 +328,9 @@ GRAS <- function(A, r_bar, s_bar, iteration_maximum = 5000, accuracy = 1e-6, eps
   return(X)
 }
 
+
 for (year in 2021:2023){
-  
+
   X_year <- X[,as.character(year)]
   fu_year <- fu_adj[,as.character(year)]
   im_year <- im_adj[,as.character(year)]
@@ -342,3 +357,28 @@ for (year in 2021:2023){
   assign(paste0("L_", year), solve(I_diag - A_year))
 
 }
+
+for (year in 2021:2023){
+  
+  coeff <- matrix(F, ncol=153, nrow = 153)
+  Z_year <- get(paste0("Z_",year))
+  Z_0_year <- get(paste0("Z_0_",year))
+  c <- 0
+  
+  for (i in 1:153){
+    for (j in 1:153){
+      
+      a <- Z_year[i,j]
+      b <- Z_0_year[i,j]
+      
+      if ((a == 0.8*b | a == 1.2*b) & (a != 0)){
+        coeff[i,j] <- T
+        c <- c+1
+      }
+      
+    }
+  }
+  assign(paste0("coeff_", year), coeff)
+  print(c)
+}
+
