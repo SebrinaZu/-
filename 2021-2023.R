@@ -81,6 +81,8 @@ for (i in 1:3) {
 
 colnames(fu_adj) <- c("2021","2022","2023")
 
+fwrite(fu_adj,"fu_adj.csv")
+
 #-----------------------------------------------------------------------------#
 # 2 im 一致性调整  ----
 #-----------------------------------------------------------------------------#
@@ -145,6 +147,8 @@ for (i in 1:3) {
 
 colnames(im_adj) <- c("2021","2022","2023")
 
+fwrite(im_adj,"im_adj.csv")
+
 
 #-----------------------------------------------------------------------------#
 # 3 A matrix  ----
@@ -178,6 +182,7 @@ for (year in 2021:2023){
 # ----------------------------------- #
 ## 3a A_focus ----
 # ----------------------------------- #
+
 
 II_coefficient <- as.matrix(IO_20[1:153,1:153]) %*% solve(diag(IO_20[154,1:153]))
 
@@ -240,10 +245,10 @@ for (year in 2021:2023){
   
 }
 
-GRAS <- function(A, r_bar, s_bar, iteration_maximum = 1000, accuracy = 1e-6, epsilon = 1e-8) {
+GRAS <- function(A, r_bar, s_bar, iteration_maximum = 2000, accuracy = 1e-6, epsilon = 1e-8) {
   # Define the P and N matrices
-  P <- ifelse(A > 0, A, 0)
-  N <- ifelse(A < 0, -A, 0)
+  P <- as.matrix(ifelse(A > 0, A, 0),ncol=ncol(A), nrow= nrow(A))
+  N <- as.matrix(ifelse(A < 0, -A, 0), nrow= nrow(A))
   
   # Initialize R and S as diagonal matrices
   m <- nrow(A)
@@ -265,7 +270,6 @@ GRAS <- function(A, r_bar, s_bar, iteration_maximum = 1000, accuracy = 1e-6, eps
   
   # Iteration
   for (iteration in 1:iteration_maximum) {
-   
     # Update S
     for (j in 1:n) {
       p_j <- sum(P[, j] * diag(R))
@@ -287,17 +291,23 @@ GRAS <- function(A, r_bar, s_bar, iteration_maximum = 1000, accuracy = 1e-6, eps
     }
     
     # Check for convergence
-    i <- rep(1, n)
+    i <- as.matrix(rep(1, n),ncol = 1, nrow = n)
     RS <- R %*% P %*% S
-    RN <- ginv(R + epsilon * diag(m)) %*% N %*% ginv(S + epsilon * diag(n))
-    RN <- solve(R) %*% N %*% solve(S)
+    RN <- tryCatch({
+      solve(R) %*% N %*% solve(S)
+    }, error = function(e) {
+      ginv(R + epsilon * diag(m)) %*% N %*% ginv(S + epsilon * diag(n))
+    })
+    
+    i <- as.matrix(rep(1, n),ncol = 1, nrow = n)  
     i_RS <- RS %*% i
     i_RN <- RN %*% i
-    error_r <- norm(i_RS - i_RN - r_star, "F") / norm(r_star, "F")
+    error_r <- norm(i_RS - i_RN - r_star, "F") / norm(as.matrix(r_star,nrow=153), "F")
     
-    i_RS_trans <- i %*% RS
-    i_RN_trans <- i %*% RN
-    error_s <- norm(i_RS_trans - i_RN_trans - s_star, "F") / norm(s_star, "F")
+    i <- as.matrix(rep(1, m),ncol = m, nrow = 1)
+    i_RS_trans <- t(i) %*% RS
+    i_RN_trans <- t(i) %*% RN
+    error_s <- norm(i_RS_trans - i_RN_trans - s_star, "F") / norm(as.matrix(s_star,nrow=1), "F")
     
     print(paste("Iteration:", iteration, "Error_r:", error_r, "Error_s:", error_s))
     
@@ -307,27 +317,42 @@ GRAS <- function(A, r_bar, s_bar, iteration_maximum = 1000, accuracy = 1e-6, eps
   }
   
   # Calculate the updated matrix X with constraints
-  X <- matrix(0, nrow = m, ncol = n)
+  Z <- matrix(0, nrow = m, ncol = n)
   r <- diag(R)
   s <- diag(S)
   
   for (i in 1:m) {
     for (j in 1:n) {
       if (A[i, j] >= 0) {
-        X[i, j] <- r[i] * A[i, j] * s[j] / exp(1)
+        Z[i, j] <- r[i] * A[i, j] * s[j] / exp(1)
       } else {
-        X[i, j] <- (1 / r[i]) * A[i, j] * (1 / s[j]) / exp(1)
+        Z[i, j] <- (1 / r[i]) * A[i, j] * (1 / s[j]) / exp(1)
       }
-      # Ensure the updated values are within ±20% of the original values
-      lower_bound <- A[i, j] - abs(A[i, j]) * 0.2
-      upper_bound <- A[i, j] + abs(A[i, j]) * 0.2
-      X[i, j] <- max(min(X[i, j], upper_bound), lower_bound)
     }
   }
   
-  return(X)
+  # Ensure the updated values are within ±20% of the original values
+  lower_bound <- A - abs(A) * 0.2
+  upper_bound <- A + abs(A) * 0.2
+  Z <- pmin(pmax(Z, lower_bound), upper_bound)
+  
+  # Normalize rows and columns to satisfy constraints
+  row_sums <- rowSums(Z)
+  for (i in 1:m) {
+    if (row_sums[i] != 0){
+      Z[i, ] <- Z[i, ] * (r_bar[i] / row_sums[i])
+    }
+  }
+  
+  col_sums <- colSums(Z)
+  for (j in 1:n) {
+    if (col_sums[j] != 0){
+      Z[, j] <- Z[, j] * (s_bar[j] / col_sums[j])
+    }
+  }
+  
+  return(Z)
 }
-
 
 for (year in 2021:2023){
 
@@ -357,28 +382,3 @@ for (year in 2021:2023){
   assign(paste0("L_", year), solve(I_diag - A_year))
 
 }
-
-for (year in 2021:2023){
-  
-  coeff <- matrix(F, ncol=153, nrow = 153)
-  Z_year <- get(paste0("Z_",year))
-  Z_0_year <- get(paste0("Z_0_",year))
-  c <- 0
-  
-  for (i in 1:153){
-    for (j in 1:153){
-      
-      a <- Z_year[i,j]
-      b <- Z_0_year[i,j]
-      
-      if ((a == 0.8*b | a == 1.2*b) & (a != 0)){
-        coeff[i,j] <- T
-        c <- c+1
-      }
-      
-    }
-  }
-  assign(paste0("coeff_", year), coeff)
-  print(c)
-}
-
