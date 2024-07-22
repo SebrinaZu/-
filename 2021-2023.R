@@ -83,6 +83,9 @@ colnames(fu_adj) <- c("2021","2022","2023")
 
 fwrite(fu_adj,"fu_adj.csv")
 
+fu_adj <- read.csv("fu_adj.csv")
+colnames(fu_adj) <- c("2021","2022","2023")
+
 #-----------------------------------------------------------------------------#
 # 2 im 一致性调整  ----
 #-----------------------------------------------------------------------------#
@@ -149,6 +152,8 @@ colnames(im_adj) <- c("2021","2022","2023")
 
 fwrite(im_adj,"im_adj.csv")
 
+im_adj <- read.csv("im_adj.csv")
+colnames(im_adj) <- c("2021","2022","2023")
 
 #-----------------------------------------------------------------------------#
 # 3 A matrix  ----
@@ -245,6 +250,10 @@ for (year in 2021:2023){
   
 }
 
+# ----------------------------------- #
+## 3c GRAS ----
+# ----------------------------------- #
+
 GRAS <- function(A, r_bar, s_bar, iteration_maximum = 2000, accuracy = 1e-6, epsilon = 1e-8) {
   # Define the P and N matrices
   P <- as.matrix(ifelse(A > 0, A, 0),ncol=ncol(A), nrow= nrow(A))
@@ -338,18 +347,25 @@ GRAS <- function(A, r_bar, s_bar, iteration_maximum = 2000, accuracy = 1e-6, eps
   
   # Normalize rows and columns to satisfy constraints
   row_sums <- rowSums(Z)
-  for (i in 1:m) {
-    if (row_sums[i] != 0){
-      Z[i, ] <- Z[i, ] * (r_bar[i] / row_sums[i])
-    }
-  }
-  
   col_sums <- colSums(Z)
-  for (j in 1:n) {
-    if (col_sums[j] != 0){
-      Z[, j] <- Z[, j] * (s_bar[j] / col_sums[j])
+  a <- 0
+  b <- 0
+  
+  for (i in 1:m) {
+    if (row_sums[i] != r_bar[i]){
+      Z[i, ] <- Z[i, ] * abs(r_bar[i] / row_sums[i])
+      a <- a+1
     }
   }
+  print(a)
+  
+  for (j in 1:n) {
+    if (col_sums[j] != s_bar[j]){
+      Z[, j] <- Z[, j] * abs(s_bar[j] / col_sums[j])
+      b <- b+1
+    }
+  }
+  print(b)
   
   return(Z)
 }
@@ -381,4 +397,58 @@ for (year in 2021:2023){
   I_diag <- diag(1,nrow=153)
   assign(paste0("L_", year), solve(I_diag - A_year))
 
+}
+
+# ----------------------------------- #
+## 3d RAS ----
+# ----------------------------------- #
+
+library(lpSolve)
+library(plot3D)
+library(ioanalysis)
+
+RS_label <- matrix(c(rep("China",153),1:153),ncol=2)
+V_label <- matrix(1:153,ncol=1)
+
+for (year in 2021:2023){
+  
+  X_year <- X[,as.character(year)]
+  fu_year <- fu_adj[,as.character(year)]
+  im_year <- im_adj[,as.character(year)]
+  va_year <- va[,as.character(year)]
+  A_focus_year <- get(paste0("A_focus_",year))
+  Z_20_year <- get(paste0("Z_20_",year))
+  Z_1_year <- get(paste0("Z_1_",year))
+  
+  r <- X_year - fu_year + im_year
+  s <- X_year - va_year
+  i_col <- as.matrix(rep(1,153), ncol = 1, nrow = 153)
+  r_bar <- as.matrix(r - A_focus_year %*% diag(as.vector(as.matrix(X_year))) %*% i_col)
+  s_bar <- as.matrix(s - t(i_col) %*% A_focus_year %*% diag(as.vector(as.matrix(X_year))))
+  
+  IO_year <- as.inputoutput(Z = Z_20_year,RS_label = RS_label,
+                            f = matrix(fu_year,ncol=1), f_label = V_label,
+                            X = X_year,
+                            V = matrix(va_year,nrow=1), V_label = t(V_label),
+                            M = im_year, M_label = V_label)
+  
+  A_2_year <- ras(io = IO_year,
+                  x1 = X_year,
+                  u1 = r_bar,
+                  v1 = s_bar,
+                  verbose = T,
+                  tol = 1e-15)
+  
+  Z_2_year <- A_2_year %*% diag(as.vector(as.matrix(X_year)))
+  
+  assign(paste0("Z_2_", year), Z_2_year)
+  
+  Z_year <- Z_1_year + Z_2_year
+  assign(paste0("Z_", year), Z_year)
+  
+  A_year <- Z_year %*% solve(diag(as.vector(as.matrix(X_year))))
+  assign(paste0("A_", year), A_year)
+  I_diag <- diag(1,nrow=153)
+  assign(paste0("L_", year), solve(I_diag - A_year))
+  
 }
