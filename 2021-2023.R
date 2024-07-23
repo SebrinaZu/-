@@ -23,6 +23,92 @@ price_index <- as.matrix(read_excel("2021-2023.xlsx",sheet = "Price", range = "C
 #-----------------------------------------------------------------------------#
 
 fu_adj <- matrix(NA, nrow=153, ncol=3)
+im_adj <- matrix(NA, nrow=153, ncol=3)
+
+fu_total <- c(1318442.3, 1383071.1, 1438489.7)
+im_total <- c(173159.4, 180600.1, 179842.4)
+weights <- c(rep(1.1, 108), rep(1, 153 - 108))
+
+# Sectors that should have X - fu + im = 0
+sectors <- c(103:107, 146)
+
+for (i in 1:3) {
+  
+  initial_fu <- as.vector(as.matrix(fu[, i]))
+  initial_im <- as.vector(as.matrix(im[, i]))
+  
+  objective_history <- numeric()
+  constraint_history <- numeric()
+  iteration <- 0
+  
+  x0 <- c(initial_fu, initial_im)
+  lower_bounds <- c(initial_fu - abs(initial_fu)*0.5, initial_im - abs(initial_im)*0.5)
+  upper_bounds <- c(initial_fu + abs(initial_fu)*0.5, initial_im + abs(initial_im)*0.5)
+  
+  objective_function <- function(x) {
+    fu_adj <- x[1:153]
+    im_adj <- x[154:306]
+    obj_value <- sum(abs(fu_adj - initial_fu)) + sum(abs(im_adj - initial_im))
+    
+    objective_history <<- c(objective_history, obj_value)
+    
+    iteration <<- iteration + 1
+    cat(sprintf("Iteration: %d, Objective Value: %f\n", iteration, obj_value))
+    
+    return(obj_value)
+  }
+  
+  constraint_function_ineq <- function(x) {
+    fu_adj <- x[1:153]
+    im_adj <- x[154:306]
+    constraints <- numeric()
+    
+    # X - fu + im >= 0 for each sector
+    for (j in 1:153) {
+      constraints <- c(constraints, X[j, i] - fu_adj[j] + im_adj[j])
+    }
+    
+    return(constraints)
+  }
+  
+  constraint_function_eq <- function(x) {
+    fu_adj <- x[1:153]
+    im_adj <- x[154:306]
+    
+    constraints <- numeric()
+    
+    # Sum constraints
+    constraints <- c(constraints, sum(fu_adj) - fu_total[i], sum(im_adj) - im_total[i])
+    
+    # X - fu + im = 0 for specific sectors
+    for (j in sectors) {
+      constraints <- c(constraints, X[j, i] - fu_adj[j] + im_adj[j])
+    }
+    
+    return(constraints)
+  }
+  
+  opts <- list("algorithm" = "NLOPT_LN_COBYLA", 
+               "xtol_rel" = 1e-8, 
+               "maxeval" = 500000)
+  
+  result <- nloptr(x0 = x0, 
+                   eval_f = objective_function, 
+                   lb = lower_bounds, 
+                   ub = upper_bounds, 
+                   eval_g_ineq = constraint_function_ineq, 
+                   eval_g_eq = constraint_function_eq, 
+                   opts = opts)
+  
+  fu_adj[, i] <- result$solution[1:153]
+  im_adj[, i] <- result$solution[154:306]
+}
+
+colnames(fu_adj) <- c("2021", "2022", "2023")
+colnames(im_adj) <- c("2021", "2022", "2023")
+
+
+fu_adj <- matrix(NA, nrow=153, ncol=3)
 fu_total <- c(1318442.3,1383071.1,1438489.7)
 
 for (i in 1:3) {
