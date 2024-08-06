@@ -18,9 +18,115 @@ im <- as.data.frame(read_excel("2021-2023.xlsx", sheet = "im", range = "K1:M154"
 
 price_index <- as.matrix(read_excel("2021-2023.xlsx",sheet = "Price", range = "C3:E156"))
 
+IO_20 <- read_excel("IO表 02-20.xlsx", sheet = "2020", range = "C6:FM166")
+IO_20 <- as.data.frame(IO_20)
+rownames(IO_20) <- IO_20[[1]]
+IO_20 <- IO_20[, -1]
+
 #-----------------------------------------------------------------------------#
-# 1 fu 一致性调整  ----
+# 1 fu & im一致性调整  ----
 #-----------------------------------------------------------------------------#
+
+# ----------------------------------- #
+## 1a part ----
+# ----------------------------------- #
+
+part_fu <- matrix(NA, nrow=11, ncol=3)
+part_im <- matrix(NA, nrow=11, ncol=3)
+
+TU_20 <- IO_20[,"TIU"]
+
+# Sectors that should have X - fu + im = 0
+sectors_1 <- c(103:107, 146)
+
+# Sectors that should have X - fu + im > 0
+sectors_2 <- c(34, 36, 144, 150, 153)
+
+for (i in 1:3) {
+  
+  initial_fu <- as.vector(as.matrix(fu[c(sectors_1,sectors_2), i]))
+  initial_im <- as.vector(as.matrix(im[c(sectors_1,sectors_2), i]))
+  
+  objective_history <- numeric()
+  constraint_history <- numeric()
+  iteration <- 0
+  
+  x0 <- c(initial_fu, initial_im)
+  lower_bounds <- rep(0,22)
+  upper_bounds <- c(initial_fu + 100*abs(initial_fu), initial_im + 100*abs(initial_im))
+  
+  objective_function <- function(x) {
+    
+    part_fu <- x[1:11]
+    part_im <- x[12:22]
+    obj_value <- sum(abs(part_fu - initial_fu)) + sum(abs(part_im - initial_im))
+    
+    objective_history <<- c(objective_history, obj_value)
+    
+    iteration <<- iteration + 1
+    cat(sprintf("Iteration: %d, Objective Value: %f\n", iteration, obj_value))
+    
+    return(obj_value)
+  }
+  
+  constraint_function_ineq <- function(x) {
+    
+    part_fu <- x[1:11]
+    part_im <- x[12:22]
+    constraints <- numeric()
+    
+    # X - fu + im >= 0.2*TU_20 and X - fu + im <= 5*TU_20 for each sector
+    for (j in seq_along(sectors_2)) {
+      sector_index <- sectors_2[j]
+      constraints <- c(constraints, -(X[sector_index, i] - part_fu[j + length(sectors_1)] + part_im[j + length(sectors_1)] - 0.2 * TU[j]))
+      constraints <- c(constraints, X[sector_index, i] - part_fu[j + length(sectors_1)] + part_im[j + length(sectors_1)] - 5 * TU[j])
+    }
+    
+    return(constraints)
+  }
+  
+  constraint_function_eq <- function(x) {
+    
+    part_fu <- x[1:11]
+    part_im <- x[12:22]
+    constraints <- numeric()
+    
+    # X - fu + im = 0 for specific sectors
+    for (j in seq_along(sectors_1)) {
+      sector_index <- sectors_1[j]
+      constraints <- c(constraints, X[sector_index, i] - part_fu[j] + part_im[j])
+    }
+    
+    return(constraints)
+  }
+  
+  opts <- list("algorithm" = "NLOPT_LN_COBYLA", 
+               "xtol_rel" = 1e-8, 
+               "maxeval" = 10000)
+  
+  result <- nloptr(x0 = x0, 
+                   eval_f = objective_function, 
+                   lb = lower_bounds, 
+                   ub = upper_bounds, 
+                   eval_g_ineq = constraint_function_ineq, 
+                   eval_g_eq = constraint_function_eq, 
+                   opts = opts)
+  
+  part_fu[, i] <- result$solution[1:11]
+  part_im[, i] <- result$solution[12:22]
+
+}
+
+for (i in 1:3){
+  
+  fu[c(sectors_1, sectors_2), i] <- part_fu[, i]
+  im[c(sectors_1, sectors_2), i] <- part_im[, i]
+  
+}
+
+# ----------------------------------- #
+## 1b full ----
+# ----------------------------------- #
 
 fu_adj <- matrix(NA, nrow=153, ncol=3)
 im_adj <- matrix(NA, nrow=153, ncol=3)
@@ -29,21 +135,17 @@ fu_total <- c(1318442.3, 1383071.1, 1438489.7)
 im_total <- c(173159.4, 180600.1, 179842.4)
 weights <- c(rep(1.1, 108), rep(1, 153 - 108))
 
-# Sectors that should have X - fu + im = 0
-sectors <- c(103:107, 146)
-
 for (i in 1:3) {
   
   initial_fu <- as.vector(as.matrix(fu[, i]))
   initial_im <- as.vector(as.matrix(im[, i]))
   
   objective_history <- numeric()
-  constraint_history <- numeric()
   iteration <- 0
   
   x0 <- c(initial_fu, initial_im)
-  lower_bounds <- c(initial_fu - abs(initial_fu)*0.5, initial_im - abs(initial_im)*0.5)
-  upper_bounds <- c(initial_fu + abs(initial_fu)*0.5, initial_im + abs(initial_im)*0.5)
+  lower_bounds <- c(initial_fu - abs(initial_fu)*0.2, initial_im - abs(initial_im)*0.2)
+  upper_bounds <- c(initial_fu + abs(initial_fu)*0.2, initial_im + abs(initial_im)*0.2)
   
   objective_function <- function(x) {
     fu_adj <- x[1:153]
@@ -58,32 +160,12 @@ for (i in 1:3) {
     return(obj_value)
   }
   
-  constraint_function_ineq <- function(x) {
-    fu_adj <- x[1:153]
-    im_adj <- x[154:306]
-    constraints <- numeric()
-    
-    # X - fu + im >= 0 for each sector
-    for (j in 1:153) {
-      constraints <- c(constraints, X[j, i] - fu_adj[j] + im_adj[j])
-    }
-    
-    return(constraints)
-  }
-  
   constraint_function_eq <- function(x) {
+    
     fu_adj <- x[1:153]
     im_adj <- x[154:306]
     
-    constraints <- numeric()
-    
-    # Sum constraints
-    constraints <- c(constraints, sum(fu_adj) - fu_total[i], sum(im_adj) - im_total[i])
-    
-    # X - fu + im = 0 for specific sectors
-    for (j in sectors) {
-      constraints <- c(constraints, X[j, i] - fu_adj[j] + im_adj[j])
-    }
+    constraints <- c(sum(fu_adj) - fu_total[i], sum(im_adj) - im_total[i])
     
     return(constraints)
   }
@@ -97,7 +179,6 @@ for (i in 1:3) {
                    lb = lower_bounds, 
                    ub = upper_bounds, 
                    eval_g_ineq = constraint_function_ineq, 
-                   eval_g_eq = constraint_function_eq, 
                    opts = opts)
   
   fu_adj[, i] <- result$solution[1:153]
@@ -107,148 +188,12 @@ for (i in 1:3) {
 colnames(fu_adj) <- c("2021", "2022", "2023")
 colnames(im_adj) <- c("2021", "2022", "2023")
 
-
-fu_adj <- matrix(NA, nrow=153, ncol=3)
-fu_total <- c(1318442.3,1383071.1,1438489.7)
-
-for (i in 1:3) {
-  
-  initial_fu <- as.vector(as.matrix(fu[,i]))
-  
-  objective_history <- numeric()
-  constraint_history <- numeric()
-  iteration <- 0
-  
-  # Initial values
-  x0 <- initial_fu
-  lower_bounds <- x0 - abs(x0) * 0.2
-  upper_bounds <- x0 + abs(x0) * 0.2
-  
-  objective_function <- function(x) {
-    fu_adj <- x
-    obj_value <- sum(abs(fu_adj - initial_fu))
-    
-    # Log the objective function value
-    objective_history <<- c(objective_history, obj_value)
-    
-    # Print the current iteration and objective function value
-    iteration <<- iteration + 1
-    cat(sprintf("Iteration: %d, Objective Value: %f\n", iteration, obj_value))
-    
-    return(obj_value)
-  }
-  
-  constraint_function <- function(x) {
-    fu_adj <- x
-    constraint_value <- sum(fu_adj) - fu_total[i]
-    
-    # Log the constraint function value
-    constraint_history <<- c(constraint_history, constraint_value)
-    
-    # Print the current iteration and constraint function value
-    cat(sprintf("Iteration: %d, Constraint Value: %f\n", iteration, constraint_value))
-    
-    return(constraint_value)
-  }
-  
-  opts <- list("algorithm" = "NLOPT_LN_COBYLA", 
-               "xtol_rel" = 1e-8, 
-               "maxeval" = 100000)
-  
-  result <- nloptr(x0 = x0, 
-                   eval_f = objective_function, 
-                   lb = lower_bounds, 
-                   ub = upper_bounds, 
-                   eval_g_eq = constraint_function, 
-                   opts = opts)
-  
-  fu_adj[,i] <- result$solution
-}
-
-colnames(fu_adj) <- c("2021","2022","2023")
-
 fwrite(fu_adj,"fu_adj.csv")
-
-fu_adj <- read.csv("fu_adj.csv")
-colnames(fu_adj) <- c("2021","2022","2023")
-
-#-----------------------------------------------------------------------------#
-# 2 im 一致性调整  ----
-#-----------------------------------------------------------------------------#
-
-im_adj <- matrix(NA, nrow=153, ncol=3)
-im_total <- c(173159.4,180600.1,179842.4)
-weights <- c(rep(1.1, 108), rep(1, 153 - 108))
-
-for (i in 1:3) {
-  
-  initial_im <- as.vector(as.matrix(im[,i]))
-  
-  objective_history <- numeric()
-  constraint_history <- numeric()
-  iteration <- 0
-  
-  # Initial values
-  x0 <- initial_im
-  lower_bounds <- x0 - abs(x0) * 0.2
-  upper_bounds <- x0 + abs(x0) * 0.2
-  
-  objective_function <- function(x) {
-    im_adj <- x
-    obj_value <- sum(weights * abs(im_adj - initial_im))
-    
-    # Log the objective function value
-    objective_history <<- c(objective_history, obj_value)
-    
-    # Print the current iteration and objective function value
-    iteration <<- iteration + 1
-    cat(sprintf("Iteration: %d, Objective Value: %f\n", iteration, obj_value))
-    
-    return(obj_value)
-  }
-  
-  constraint_function <- function(x) {
-    im_adj <- x
-    constraint_value <- sum(im_adj) - im_total[i]
-    
-    # Log the constraint function value
-    constraint_history <<- c(constraint_history, constraint_value)
-    
-    # Print the current iteration and constraint function value
-    cat(sprintf("Iteration: %d, Constraint Value: %f\n", iteration, constraint_value))
-    
-    return(constraint_value)
-  }
-  
-  opts <- list("algorithm" = "NLOPT_LN_COBYLA", 
-               "xtol_rel" = 1e-8, 
-               "maxeval" = 100000)
-  
-  result <- nloptr(x0 = x0, 
-                   eval_f = objective_function, 
-                   lb = lower_bounds, 
-                   ub = upper_bounds, 
-                   eval_g_eq = constraint_function, 
-                   opts = opts)
-  
-  im_adj[,i] <- result$solution
-}
-
-colnames(im_adj) <- c("2021","2022","2023")
-
 fwrite(im_adj,"im_adj.csv")
-
-im_adj <- read.csv("im_adj.csv")
-colnames(im_adj) <- c("2021","2022","2023")
 
 #-----------------------------------------------------------------------------#
 # 3 A matrix  ----
 #-----------------------------------------------------------------------------#
-
-IO_20 <- read_excel("IO表 02-20.xlsx", sheet = "2020", range = "C6:FM166")
-IO_20 <- as.data.frame(IO_20)
-rownames(IO_20) <- IO_20[[1]]
-IO_20 <- IO_20[, -1]
 
 X_20 <- IO_20[1:153,"GO"]
 
