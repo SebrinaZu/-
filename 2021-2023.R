@@ -128,8 +128,8 @@ for (i in 1:3){
 ## 1b full ----
 # ----------------------------------- #
 
-fu_adj_all <- matrix(NA, nrow=153, ncol=3)
-im_adj_all <- matrix(NA, nrow=153, ncol=3)
+fu_adj <- matrix(NA, nrow=153, ncol=3)
+im_adj <- matrix(NA, nrow=153, ncol=3)
 
 fu_total <- c(1318442.3, 1383071.1, 1438489.7)
 im_total <- c(173159.4, 180600.1, 179842.4)
@@ -178,18 +178,18 @@ for (i in 1:3) {
                    eval_f = objective_function, 
                    lb = lower_bounds, 
                    ub = upper_bounds, 
-                   eval_g_ineq = constraint_function_ineq, 
+                   eval_g_eq = constraint_function_eq, 
                    opts = opts)
   
-  fu_adj_all[, i] <- result$solution[1:153]
-  im_adj_all[, i] <- result$solution[154:306]
+  fu_adj[, i] <- result$solution[1:153]
+  im_adj[, i] <- result$solution[154:306]
 }
 
-colnames(fu_adj_all) <- c("2021", "2022", "2023")
-colnames(im_adj_all) <- c("2021", "2022", "2023")
+colnames(fu_adj) <- c("2021", "2022", "2023")
+colnames(im_adj) <- c("2021", "2022", "2023")
 
-fwrite(fu_adj_all,"fu_adj.csv")
-fwrite(im_adj_all,"im_adj.csv")
+fwrite(fu_adj,"fu_adj_all.csv")
+fwrite(im_adj,"im_adj_all.csv")
 
 #-----------------------------------------------------------------------------#
 # 3 A matrix  ----
@@ -403,8 +403,8 @@ GRAS <- function(A, r_bar, s_bar, iteration_maximum = 2000, accuracy = 1e-6, eps
 for (year in 2021:2023){
 
   X_year <- X[,as.character(year)]
-  fu_year <- fu_adj_all[,as.character(year)]
-  im_year <- im_adj_all[,as.character(year)]
+  fu_year <- fu_adj[,as.character(year)]
+  im_year <- im_adj[,as.character(year)]
   va_year <- va[,as.character(year)]
   A_focus_year <- get(paste0("A_focus_",year))
   Z_20_year <- get(paste0("Z_20_",year))
@@ -443,8 +443,8 @@ V_label <- matrix(1:153,ncol=1)
 for (year in 2021:2023){
   
   X_year <- X[,as.character(year)]
-  fu_year <- fu_adj_all[,as.character(year)]
-  im_year <- im_adj_all[,as.character(year)]
+  fu_year <- fu_adj[,as.character(year)]
+  im_year <- im_adj[,as.character(year)]
   va_year <- va[,as.character(year)]
   A_focus_year <- get(paste0("A_focus_",year))
   Z_20_year <- get(paste0("Z_20_",year))
