@@ -1,4 +1,234 @@
 
+library(readxl)
+
+#-----------------------------------------------------------------------------#
+# 1. compile dataset  ----
+#-----------------------------------------------------------------------------#
+
+# ----------------------------------- #
+## 1a read IO tables ----
+# ----------------------------------- #
+
+read_province_data <- function(base_dir, year) {
+  
+  year_dir <- file.path(base_dir, sprintf("%d年各省份投入产出表", year))
+  file_list <- list.files(year_dir, full.names = TRUE, pattern = "\\.xls$")
+  indices <- as.numeric(sub("^(\\d+).*$", "\\1", basename(file_list)))
+  ordered_files <- file_list[order(indices)]
+  
+  data_list <- list()
+  coeff_list <- list()
+  
+  for (file_path in ordered_files) {
+    
+    file_name <- basename(file_path)
+    province_index <- as.numeric(sub("^(\\d+).*$", "\\1", file_name))
+    
+    if (year == 2002){
+      if (province_index == 0){
+        data <- as.data.frame(read_excel(file_path, range = "C8:BG57"))
+        rownames(data) <- data[[1]]
+        data <- data[, -1]
+      } else {
+        data <- as.data.frame(read_excel(file_path, range = "C6:BG55"))
+        rownames(data) <- data[[1]]
+        data <- data[, -1]
+      }
+    }
+    
+    if (year == 2007){
+      data <- as.data.frame(read_excel(file_path, range = "C8:BG57"))
+      rownames(data) <- data[[1]]
+      data <- data[, -1]
+    }
+    
+    if (year == 2012){
+      if (province_index == 0){
+        data <- as.data.frame(read_excel(file_path, range = "C10:BG59"))
+        rownames(data) <- data[[1]]
+        data <- data[, -1]
+      } else {
+        data <- as.data.frame(read_excel(file_path, range = "C9:BI58"))
+        rownames(data) <- data[[1]]
+        data <- data[, -1]
+      }
+    }
+    
+    if (year == 2015){
+      if (province_index == 0){
+        data <- as.data.frame(read_excel(file_path, range = "C8:BG57"))
+        rownames(data) <- data[[1]]
+        data <- data[, -1]
+      } else if (province_index == 2){
+        data <- as.data.frame(read_excel(file_path, range = "C8:BH57"))
+        rownames(data) <- data[[1]]
+        data <- data[, -1]
+      } else {
+        data <- as.data.frame(read_excel(file_path, range = "C10:BI59"))
+        rownames(data) <- data[[1]]
+        data <- data[, -1]
+      }
+    }
+    
+    if (year == 2017){
+      if (province_index == 0){
+        data_raw <- as.data.frame(read_excel(file_path, range = "C6:FI162"))
+        rownames(data_raw) <- data_raw[[1]]
+        data_raw <- data_raw[, -1]
+        data <- turn_into_42sectors(data_raw)
+      } else {
+        data <- as.data.frame(read_excel(file_path, range = "C8:BI57"))
+        rownames(data) <- data[[1]]
+        data <- data[, -1]
+      }
+    }
+    
+    if (year == 2018 | year == 2020){
+      if (province_index == 0){
+        data_raw <- as.data.frame(read_excel(file_path, range = "C6:FM166"))
+        rownames(data_raw) <- data_raw[[1]]
+        data_raw <- data_raw[, -1]
+        data <- turn_into_42sectors(data_raw)
+      } 
+    }
+    
+    cat("Data for province index", province_index, ":\n")
+    print(head(data))
+    
+    coeff <- matrix(NA, ncol = 2, nrow = 44)
+    colnames(coeff) <- c("TU", "TI")
+    all_data[["IO_2018"]][["IO_00_2018"]]["TI", ]
+    for (i in 1:42) {
+      coeff[i, 1] <- data[i, "TIU"] / data["TI", "TIU"]
+      coeff[i, 2] <- data["TII", i] / data["TII", "GO"]
+    }
+    
+    coeff[43, 1] <- data["VA001", "TIU"] / data["TI", "TIU"]
+    coeff[43, 2] <- 0
+    coeff[44, 1] <- (data["TVA", "TIU"] - data["VA001", "TIU"]) / data["TI", "TIU"]
+    coeff[44, 2] <- data["TII", "TFU"] / data["TII", "GO"]
+    
+    data_list[[paste0("IO_", sprintf("%02d", province_index), "_", year)]] <- data
+    coeff_list[[paste0("Coeff_", sprintf("%02d", province_index), "_", year)]] <- coeff
+  }
+  
+  return(list(IO = data_list, Coeff = coeff_list))
+}
+
+turn_into_42sectors <- function(data_raw){
+  
+  group_list <- list()
+  group_list[[1]] <- grep("^(01|02|03|04|05)", rownames(data_raw))
+  group_list[[2]] <- grep("^(06)", rownames(data_raw))
+  group_list[[3]] <- grep("^(07)", rownames(data_raw))
+  group_list[[4]] <- grep("^(08|09)", rownames(data_raw))
+  group_list[[5]] <- grep("^(10|11)", rownames(data_raw))
+  group_list[[6]] <- grep("^(13|14|15|16)", rownames(data_raw))
+  group_list[[7]] <- grep("^(17)", rownames(data_raw))
+  group_list[[8]] <- grep("^(18|19)", rownames(data_raw))
+  group_list[[9]] <- grep("^(20|21)", rownames(data_raw))
+  group_list[[10]] <- grep("^(22|23|24)", rownames(data_raw))
+  group_list[[11]] <- grep("^(25)", rownames(data_raw))
+  group_list[[12]] <- grep("^(26|27|28)", rownames(data_raw))
+  group_list[[13]] <- grep("^(29|30)", rownames(data_raw))
+  group_list[[14]] <- grep("^(31|32)", rownames(data_raw))
+  group_list[[15]] <- grep("^(33)", rownames(data_raw))
+  group_list[[16]] <- grep("^(34)", rownames(data_raw))
+  group_list[[17]] <- grep("^(35)", rownames(data_raw))
+  group_list[[18]] <- grep("^(36|37)", rownames(data_raw))
+  group_list[[19]] <- grep("^(38)", rownames(data_raw))
+  group_list[[20]] <- grep("^(39)", rownames(data_raw))
+  group_list[[21]] <- grep("^(40)", rownames(data_raw))
+  group_list[[22]] <- grep("^(41)", rownames(data_raw))
+  group_list[[23]] <- grep("^(42)", rownames(data_raw))
+  group_list[[24]] <- grep("^(43)", rownames(data_raw))
+  group_list[[25]] <- grep("^(44)", rownames(data_raw))
+  group_list[[26]] <- grep("^(45)", rownames(data_raw))
+  group_list[[27]] <- grep("^(46)", rownames(data_raw))
+  group_list[[28]] <- grep("^(47|48|49|50)", rownames(data_raw))
+  group_list[[29]] <- grep("^(51|52)", rownames(data_raw))
+  group_list[[30]] <- grep("^(53|54|55|56|57|58|59|60)", rownames(data_raw))
+  group_list[[31]] <- grep("^(61|62)", rownames(data_raw))
+  group_list[[32]] <- grep("^(63|64|65)", rownames(data_raw))
+  group_list[[33]] <- grep("^(66|67|68)", rownames(data_raw))
+  group_list[[34]] <- grep("^(70)", rownames(data_raw))
+  group_list[[35]] <- grep("^(71|72)", rownames(data_raw))
+  group_list[[36]] <- grep("^(73|74|75)", rownames(data_raw))
+  group_list[[37]] <- grep("^(76|77|78)", rownames(data_raw))
+  group_list[[38]] <- grep("^(80|81)", rownames(data_raw))
+  group_list[[39]] <- grep("^(83)", rownames(data_raw))
+  group_list[[40]] <- grep("^(84|85)", rownames(data_raw))
+  group_list[[41]] <- grep("^(86|87|88|89|90)", rownames(data_raw))
+  group_list[[42]] <- grep("^(91|94)", rownames(data_raw))
+  
+  data <- matrix(NA, nrow = 49, ncol = 55)
+  rownames(data) <- c(sprintf("%02d", 1:42),
+                            "TII","VA001","VA002","VA003","VA004","TVA","TI")
+  colnames(data) <- c(sprintf("%02d", 1:42),
+                            "TIU",	"FU101",	"FU102",	"THC",	"FU103",	"TC",	"FU201",	"FU202",	"GCF",	"EX",	"TFU",	"IM",	"GO")
+  
+  for (i in 1:nrow(data)){
+    for (j in 1: ncol(data)){
+      if ((i %in% 1:42) & (j %in% 1:42)){
+        data[i,j] <- sum(data_raw[group_list[[i]],group_list[[j]]],na.rm = T)
+      } else if ((i %in% 1:42) & (j > 42)){
+        data[i,j] <- sum(data_raw[group_list[[i]],colnames(data)[j]],na.rm = T)
+      } else if ((j %in% 1:42) & (i > 42)){
+        data[i,j] <- sum(data_raw[rownames(data)[i],group_list[[j]]],na.rm = T)
+      } else if ((j == 43) & (i > 42)){
+        data[i,j] <- data_raw[rownames(data)[i],colnames(data)[j]]
+      } else if ((i == 43) & (j > 42)){
+        data[i,j] <- data_raw[rownames(data)[i],colnames(data)[j]]
+      } 
+    }
+  }
+  
+  return(data)
+}
+
+years <- c(2002, 2007, 2012, 2015, 2017, 2018, 2020)
+
+all_data <- list()
+
+for (year in years) {
+
+  base_dir <- "2002-2017分省投入产出表"
+  data <- read_province_data(base_dir, year)
+  
+  IO_data <- data$IO
+  Coeff_data <- data$Coeff
+  
+  cat("Adding data for year", year, ":\n")
+  print(names(IO_data))
+  print(names(Coeff_data))
+  
+  all_data[[paste0("IO_", year)]] <- IO_data
+  all_data[[paste0("Coeff_", year)]] <- Coeff_data
+
+}
+
+# ----------------------------------- #
+## 1b generate final dataset ----
+# ----------------------------------- #
+
+dataset <- as.data.frame(read_excel("energy consumption.xlsx", range = "A1:BD167"))
+
+for (i in 1:nrow(dataset)) {
+  
+  province_index <- dataset$Province_index[i]
+  year <- dataset$Year[i]
+  Coeff_list <- all_data[[paste0("Coeff_", year)]]
+  TU_coeff_year <- Coeff_list[[paste0("Coeff_", province_index, "_",year)]][,1]
+  
+  if (!is.null(TU_coeff_year)){
+    dataset[i, 13:56] <- TU_coeff_year
+  }
+}
+
+#-----------------------------------------------------------------------------#
+# 2. fit model  ----
+#-----------------------------------------------------------------------------#
+
 library(devtools)
 library(usethis)
 require(devtools)
@@ -14,13 +244,8 @@ dataset <- read.csv("data.csv")
 dataset$Country <- as.factor(dataset$Country)
 dataset$Year <- as.factor(dataset$Year)
 
-y <- dataset[,4:37]
-x <- dataset[,c(2:3,38:52)]
-
-model <- fmlogit_2(y,x,cluster = dataset$Country)
-
-fmlogit_2 <- function(y, X, beta0 = NULL, MLEmethod = "CG", maxit = 5e+05, 
-                 abstol = 1e-05,cluster=NULL,reps=1000, ...){
+fmlogit_2 <- function(y, X, beta0 = NULL, MLEmethod = "CG", maxit = 5e+07, 
+                      abstol = 1e-05, cluster = NULL, reps = 1000, ...){
   start.time = proc.time()
   
   if(length(cluster)!=nrow(y) & !is.null(cluster)){
@@ -79,7 +304,7 @@ fmlogit_2 <- function(y, X, beta0 = NULL, MLEmethod = "CG", maxit = 5e+05,
     Xnames = c(Xnames, "constant")
     colnames(X) = Xnames
   }
-
+  
   testcols <- function(X) {
     m = crossprod(as.matrix(X))
     ee = eigen(m)
@@ -151,7 +376,7 @@ fmlogit_2 <- function(y, X, beta0 = NULL, MLEmethod = "CG", maxit = 5e+05,
   
   ###insert--nonparametric bootstrap procedure (clustered SE and vcov)
   
-  if(is.null(cluster)==F){
+  if(is.null(cluster) == F){
     cluster = cluster[row.remain]
     clusters <- names(table(cluster))
     for (i in 1:j) {
@@ -201,13 +426,16 @@ fmlogit_2 <- function(y, X, beta0 = NULL, MLEmethod = "CG", maxit = 5e+05,
         
         b=b+1
       }
-      if(length(no_singular_error)>0){warning(paste('Error in solve.default(A) : Lapack routine dgesv: system is exactly singular: U[28,28] = 0" Appeared',length(no_singular_error),'times within cluster bootstrap for outcome #',i))}
+      if(length(no_singular_error)>0){
+        warning(paste('Error in solve.default(A) : Lapack routine dgesv: system is exactly singular: U[28,28] = 0" Appeared',length(no_singular_error),'times within cluster bootstrap for outcome #',i))
+      }
       std_b=apply(sterrs,2,mean)
       vcov[[i]] = Reduce("+", vcov_j_list) / length(vcov_j_list)
       if (i > 1) 
         sigmat[i - 1, ] = std_b
     }
   }else{
+    
     for(i in 1:j){
       # start calculation  
       sum_expxb = rowSums(exp(X %*% t(betamat_aug))) # sum of the exp(x'b)s
@@ -225,11 +453,23 @@ fmlogit_2 <- function(y, X, beta0 = NULL, MLEmethod = "CG", maxit = 5e+05,
       mu = y[,i] - G
       X_b = X * as.vector(mu * g / G / (1-G))
       B = t(X_b) %*% X_b
-      Var_b = solve(A) %*% B %*% solve(A)
-      std_b = sqrt(diag(Var_b))
-      # std_b= sqrt(diag(solve(A))) is the "unrobust" standard error. 
-      vcov[[i]] = Var_b
-      if(i>1) sigmat[i-1,] = std_b
+      
+      a_solve = tryCatch({
+        solve(A)
+      }, error = function(e) {
+        warning("Error in solve.default(A): Matrix A is computationally singular.")
+        return(NULL)
+      })
+      
+      if(!is.null(a_solve)){
+        Var_b = a_solve %*% B %*% a_solve
+        std_b = sqrt(diag(Var_b))
+        vcov[[i]] = Var_b
+        if(i>1) sigmat[i-1,] = std_b
+      } else {
+        next
+      }
+      
     }
   }
   
@@ -269,3 +509,19 @@ fmlogit_2 <- function(y, X, beta0 = NULL, MLEmethod = "CG", maxit = 5e+05,
               round(proc.time()[3] - start.time[3], 1), "seconds"))
   return(structure(outlist, class = "fmlogit"))
 }
+
+y <- dataset[,4:37]
+x <- dataset[,c(2:3,38:52)]
+
+y <- dataset[1:10,4:37]
+x <- dataset[1:10,c(38:40)]
+
+model <- fmlogit_2(y = y,X = x)
+
+effects.fmlogit(model, effect = "marginal", se = T, varlist = colnames(x)[3])
+predict.fmlogit(model,x[1,])
+
+y <- dataset[1:52,4:37]
+x <- dataset[1:52,c(2:3,38:47)]
+
+model_2 <- fmlogit_2(y = y,X = x,cluster = dataset$Year[1:52])
