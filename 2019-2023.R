@@ -35,34 +35,29 @@ IO_20 <- IO_20[, -1]
 ## 1a part ----
 # ----------------------------------- #
 
-part_fu_all <- matrix(NA, nrow = 11, ncol = 4)
-part_im_all <- matrix(NA, nrow = 11, ncol = 4)
-
-TU_20 <- IO_20[,"TIU"]
+part_fu_all <- matrix(NA, nrow = 6, ncol = 4)
+part_im_all <- matrix(NA, nrow = 6, ncol = 4)
 
 # Sectors that should have X - fu + im = 0
-sectors_1 <- c(103:107, 146)
-
-# Sectors that should have X - fu + im > 0
-sectors_2 <- c(34, 36, 144, 150, 153)
+sectors <- c(103:107, 146)
 
 for (i in 1:4) {
   
-  initial_fu <- as.vector(as.matrix(fu[c(sectors_1,sectors_2), i]))
-  initial_im <- as.vector(as.matrix(im[c(sectors_1,sectors_2), i]))
+  initial_fu <- as.vector(as.matrix(fu[sectors, i]))
+  initial_im <- as.vector(as.matrix(im[sectors, i]))
   
   objective_history <- numeric()
   constraint_history <- numeric()
   iteration <- 0
   
   x0 <- c(initial_fu, initial_im)
-  lower_bounds <- rep(0,22)
-  upper_bounds <- c(initial_fu + 100*abs(initial_fu), initial_im + 100*abs(initial_im))
+  lower_bounds <- rep(0,12)
+  upper_bounds <- c(initial_fu + 10*abs(initial_fu), initial_im + 10*abs(initial_im))
   
   objective_function <- function(x) {
     
-    part_fu <- x[1:11]
-    part_im <- x[12:22]
+    part_fu <- x[1:6]
+    part_im <- x[7:12]
     obj_value <- sum(abs(part_fu - initial_fu)) + sum(abs(part_im - initial_im))
     
     objective_history <<- c(objective_history, obj_value)
@@ -73,31 +68,15 @@ for (i in 1:4) {
     return(obj_value)
   }
   
-  constraint_function_ineq <- function(x) {
-    
-    part_fu <- x[1:11]
-    part_im <- x[12:22]
-    constraints <- numeric()
-    
-    # X - fu + im >= 0.2*TU_20 and X - fu + im <= 5*TU_20 for each sector
-    for (j in seq_along(sectors_2)) {
-      sector_index <- sectors_2[j]
-      constraints <- c(constraints, -(X[sector_index, i] - part_fu[j + length(sectors_1)] + part_im[j + length(sectors_1)] - 0.2 * TU_20[sector_index] / 10000))
-      constraints <- c(constraints, (X[sector_index, i] - part_fu[j + length(sectors_1)] + part_im[j + length(sectors_1)] - 5 * TU_20[sector_index] / 10000))
-    }
-    
-    return(constraints)
-  }
-  
   constraint_function_eq <- function(x) {
     
-    part_fu <- x[1:11]
-    part_im <- x[12:22]
+    part_fu <- x[1:6]
+    part_im <- x[7:12]
     constraints <- numeric()
     
     # X - fu + im = 0 for specific sectors
-    for (j in seq_along(sectors_1)) {
-      sector_index <- sectors_1[j]
+    for (j in seq_along(sectors)) {
+      sector_index <- sectors[j]
       constraints <- c(constraints, X[sector_index, i] - part_fu[j] + part_im[j])
     }
     
@@ -112,46 +91,58 @@ for (i in 1:4) {
                    eval_f = objective_function, 
                    lb = lower_bounds, 
                    ub = upper_bounds, 
-                   eval_g_ineq = constraint_function_ineq, 
                    eval_g_eq = constraint_function_eq, 
                    opts = opts)
   
-  part_fu_all[, i] <- result$solution[1:11]
-  part_im_all[, i] <- result$solution[12:22]
+  part_fu_all[, i] <- result$solution[1:6]
+  part_im_all[, i] <- result$solution[7:12]
   
 }
 
 for (i in 1:4){
-  fu[c(sectors_1, sectors_2), i] <- part_fu_all[, i]
-  im[c(sectors_1, sectors_2), i] <- part_im_all[, i]
+  fu[sectors, i] <- part_fu_all[, i]
+  im[sectors, i] <- part_im_all[, i]
 }
 
 # ----------------------------------- #
 ## 1b full ----
 # ----------------------------------- #
 
-fu_adj_all <- matrix(NA, nrow = 153, ncol = 4)
-im_adj_all <- matrix(NA, nrow = 153, ncol = 4)
+TU_18 <- IO_18[,"TIU"]
+TU_20 <- IO_20[,"TIU"]
+
+fu_adj_all <- matrix(NA, nrow = 147, ncol = 4)
+im_adj_all <- matrix(NA, nrow = 147, ncol = 4)
 
 fu_total <- c(1133962.1, 1318442.3, 1383071.1, 1438489.7)
 im_total <- c(143253.7, 173159.4, 180600.1, 179842.4)
-weights <- c(rep(1.1, 108), rep(1, 153 - 108))
+
+remaining_indices <- setdiff(1:153, sectors)
+mapping <- data.frame(Sequential_Index = 1:length(remaining_indices), 
+                      Original_Index = remaining_indices)
 
 for (i in 1:4) {
   
-  initial_fu <- as.vector(as.matrix(fu[, i]))
-  initial_im <- as.vector(as.matrix(im[, i]))
+  initial_fu <- as.vector(as.matrix(fu[-sectors, i]))
+  initial_im <- as.vector(as.matrix(im[-sectors, i]))
   
   objective_history <- numeric()
   iteration <- 0
   
   x0 <- c(initial_fu, initial_im)
-  lower_bounds <- c(initial_fu - abs(initial_fu), initial_im - abs(initial_im))
-  upper_bounds <- c(initial_fu + abs(initial_fu), initial_im + abs(initial_im))
+  lower_bounds <- c(
+    ifelse(initial_fu >= 0, 0, 10 * initial_fu), 
+    ifelse(initial_im >= 0, 0, 10 * initial_im)   
+  )
+  upper_bounds <- c(
+    ifelse(initial_fu >= 0, 10 * initial_fu, 0),  
+    ifelse(initial_im >= 0, 10 * initial_im, 0)  
+  )
   
   objective_function <- function(x) {
-    fu_adj <- x[1:153]
-    im_adj <- x[154:306]
+    
+    fu_adj <- x[1:147]
+    im_adj <- x[148:294]
     obj_value <- sum(abs(fu_adj - initial_fu)) + sum(abs(im_adj - initial_im))
     
     objective_history <<- c(objective_history, obj_value)
@@ -164,18 +155,41 @@ for (i in 1:4) {
   
   constraint_function_eq <- function(x) {
     
-    fu_adj <- x[1:153]
-    im_adj <- x[154:306]
+    fu_adj <- x[1:147]
+    im_adj <- x[148:294]
+    constraints <- c(sum(fu_adj) + sum(part_fu_all[,i]) - fu_total[i], 
+                     sum(im_adj) + sum(part_im_all[,i]) - im_total[i])
     
-    constraints <- c(sum(fu_adj) - fu_total[i], sum(im_adj) - im_total[i])
-    
-    constraint_value_fu <- sum(fu_adj) - fu_total[i]
-    constraint_value_im <- sum(im_adj) - im_total[i]
+    constraint_value_fu <- sum(fu_adj) + sum(part_fu_all[,i]) - fu_total[i]
+    constraint_value_im <- sum(im_adj) + sum(part_im_all[,i]) - im_total[i]
     constraint_history <<- c(constraint_history, constraint_value_fu, constraint_value_im)
     
     # Print the current iteration and constraint function value
     cat(sprintf("Iteration: %d, Constraint Value fu: %f\n", iteration, constraint_value_fu))
     cat(sprintf("Iteration: %d, Constraint Value im: %f\n", iteration, constraint_value_im))
+    
+    return(constraints)
+  }
+  
+  constraint_function_ineq <- function(x) {
+    
+    fu_adj <- x[1:147]
+    im_adj <- x[148:294]
+    constraints <- numeric()
+    
+    # X - fu + im >= 0.2 * TU & X - fu + im <= 5 * TU
+    for (j in 1:147) {
+      sector_index <- mapping$Original_Index[j]
+      # constraints <- c(constraints, -(X[sector_index, i] - fu_adj[j] + im_adj[j]))
+      
+      if (i == 1){
+        constraints <- c(constraints, -(X[sector_index, i] - fu_adj[j] + im_adj[j] - 0.2 * TU_18[sector_index]/10000))
+        constraints <- c(constraints, X[sector_index, i] - fu_adj[j] + im_adj[j] - 5 * TU_18[sector_index]/10000)
+      } else {
+        constraints <- c(constraints, -(X[sector_index, i] - fu_adj[j] + im_adj[j] - 0.2 * TU_20[sector_index]/10000))
+        constraints <- c(constraints, X[sector_index, i] - fu_adj[j] + im_adj[j] - 5 * TU_20[sector_index]/10000)
+      }
+    }
     
     return(constraints)
   }
@@ -188,22 +202,58 @@ for (i in 1:4) {
                    eval_f = objective_function, 
                    lb = lower_bounds, 
                    ub = upper_bounds, 
+                   eval_g_ineq = constraint_function_ineq, 
                    eval_g_eq = constraint_function_eq, 
                    opts = opts)
   
-  fu_adj_all[, i] <- result$solution[1:153]
-  im_adj_all[, i] <- result$solution[154:306]
+  fu_adj_all[, i] <- result$solution[1:147]
+  im_adj_all[, i] <- result$solution[148:294]
 }
 
-colnames(fu_adj_all) <- c("2019", "2021", "2022", "2023")
-colnames(im_adj_all) <- c("2019", "2021", "2022", "2023")
+fu_adj <- matrix(NA, nrow = 153, ncol = 4)
+im_adj <- matrix(NA, nrow = 153, ncol = 4)
 
-fwrite(fu_adj_all,"fu_adj.csv")
-fwrite(im_adj_all,"im_adj.csv")
+k = 0
+for (i in 1:153){
+  if (i %in% sectors){
+    for (j in 1:4){
+      fu_adj[i,j] <- fu[i,j]
+    }
+    k <- k + 1
+  } else {
+    for (j in 1:4){
+      fu_adj[i,j] <- fu_adj_all[i - k,j]
+    }
+  }
+}
+
+k = 0
+for (i in 1:153){
+  if (i %in% sectors){
+    for (j in 1:4){
+      im_adj[i,j] <- im[i,j]
+    }
+    k <- k + 1
+  } else {
+    for (j in 1:4){
+      im_adj[i,j] <- im_adj_all[i - k,j]
+    }
+  }
+}
+
+colnames(fu_adj) <- c("2019", "2021", "2022", "2023")
+colnames(im_adj) <- c("2019", "2021", "2022", "2023")
+
+fwrite(fu_adj,"fu_adj.csv")
+fwrite(im_adj,"im_adj.csv")
 
 #-----------------------------------------------------------------------------#
-# 3 A matrix  ----
+# 2 Compile  ----
 #-----------------------------------------------------------------------------#
+
+fu_adj <- read.csv("fu_adj.csv")
+im_adj <- read.csv("im_adj.csv")
+colnames(fu_adj) <- colnames(im_adj) <- c(2019,2021:2023)
 
 X_18 <- IO_18[1:153,"GO"]
 X_20 <- IO_20[1:153,"GO"]
@@ -238,7 +288,7 @@ for (year in c(2019, 2021:2023)){
 }
 
 # ----------------------------------- #
-## 3a A_focus ----
+## 2a A_focus ----
 # ----------------------------------- #
 
 II_coefficient_18 <- as.matrix(IO_18[1:153,1:153]) %*% solve(diag(IO_18[154,1:153]))
@@ -266,13 +316,13 @@ for (year in c(2019, 2021:2023)){
   
   if (year == 2019){
     
-    for (idx in 1:nrow(II_indices)) {
+    for (idx in 1:nrow(II_indices_18)) {
       i <- II_indices_18[idx, 1]
       j <- II_indices_18[idx, 2]
       A_focus[i, j] <- A_0_year[i, j]
     }
     
-    for (idx in 1:nrow(IU_indices)) {
+    for (idx in 1:nrow(IU_indices_18)) {
       i <- IU_indices_18[idx, 1]
       j <- IU_indices_18[idx, 2]
       A_focus[i, j] <- A_0_year[i, j]
@@ -280,13 +330,13 @@ for (year in c(2019, 2021:2023)){
     
   } else {
     
-    for (idx in 1:nrow(II_indices)) {
+    for (idx in 1:nrow(II_indices_20)) {
       i <- II_indices_20[idx, 1]
       j <- II_indices_20[idx, 2]
       A_focus[i, j] <- A_0_year[i, j]
     }
     
-    for (idx in 1:nrow(IU_indices)) {
+    for (idx in 1:nrow(IU_indices_20)) {
       i <- IU_indices_20[idx, 1]
       j <- IU_indices_20[idx, 2]
       A_focus[i, j] <- A_0_year[i, j]
@@ -300,7 +350,7 @@ for (year in c(2019, 2021:2023)){
 }
 
 # ----------------------------------- #
-## 3b A_unfocus ----
+## 2b A_unfocus ----
 # ----------------------------------- #
 
 for (year in c(2019, 2021:2023)){
@@ -310,13 +360,13 @@ for (year in c(2019, 2021:2023)){
   
   if (year == 2019){
     
-    for (idx in 1:nrow(II_indices)) {
+    for (idx in 1:nrow(II_indices_18)) {
       i <- II_indices_18[idx, 1]
       j <- II_indices_18[idx, 2]
       A_unfocus[i, j] <- 0
     }
     
-    for (idx in 1:nrow(IU_indices)) {
+    for (idx in 1:nrow(IU_indices_18)) {
       i <- IU_indices_18[idx, 1]
       j <- IU_indices_18[idx, 2]
       A_unfocus[i, j] <- 0
@@ -324,13 +374,13 @@ for (year in c(2019, 2021:2023)){
     
   } else {
     
-    for (idx in 1:nrow(II_indices)) {
+    for (idx in 1:nrow(II_indices_20)) {
       i <- II_indices_20[idx, 1]
       j <- II_indices_20[idx, 2]
       A_unfocus[i, j] <- 0
     }
     
-    for (idx in 1:nrow(IU_indices)) {
+    for (idx in 1:nrow(IU_indices_20)) {
       i <- IU_indices_20[idx, 1]
       j <- IU_indices_20[idx, 2]
       A_unfocus[i, j] <- 0
@@ -344,7 +394,7 @@ for (year in c(2019, 2021:2023)){
 }
 
 # ----------------------------------- #
-## 3c GRAS ----
+## 2c GRAS ----
 # ----------------------------------- #
 
 GRAS <- function(A, r_bar, s_bar, iteration_maximum = 2000, accuracy = 1e-6, epsilon = 1e-8) {
@@ -466,8 +516,8 @@ GRAS <- function(A, r_bar, s_bar, iteration_maximum = 2000, accuracy = 1e-6, eps
 for (year in c(2019, 2021:2023)){
   
   X_year <- X[,as.character(year)]
-  fu_year <- fu_adj_all[,as.character(year)]
-  im_year <- im_adj_all[,as.character(year)]
+  fu_year <- fu_adj[,as.character(year)]
+  im_year <- im_adj[,as.character(year)]
   va_year <- va[,as.character(year)]
   A_focus_year <- get(paste0("A_focus_",year))
   Z_20_year <- get(paste0("Z_20_",year))
@@ -480,20 +530,21 @@ for (year in c(2019, 2021:2023)){
   s_bar <- as.matrix(s - t(i_col) %*% A_focus_year %*% diag(as.vector(as.matrix(X_year))))
   
   Z_2_year <- GRAS(A = Z_20_year, r_bar, s_bar)
-  assign(paste0("Z_2_", year), Z_2_year)
-  
+  # assign(paste0("Z_2_", year), Z_2_year)
   Z_year <- Z_1_year + Z_2_year
-  assign(paste0("Z_", year), Z_year)
+  assign(paste0("Z_", year,"_G"), Z_year)
   
-  A_year <- Z_year %*% solve(diag(as.vector(as.matrix(X_year))))
-  assign(paste0("A_", year), A_year)
-  I_diag <- diag(1,nrow=153)
-  assign(paste0("L_", year), solve(I_diag - A_year))
+  # A_year <- Z_year %*% solve(diag(as.vector(as.matrix(X_year))))
+  # assign(paste0("A_", year), A_year)
+  # I_diag <- diag(1,nrow=153)
+  # assign(paste0("L_", year), solve(I_diag - A_year))
   
 }
 
+fwrite(Z_2023_G,"Z_2023_G.csv")
+
 # ----------------------------------- #
-## 3d RAS ----
+## 2d RAS ----
 # ----------------------------------- #
 
 library(lpSolve)
@@ -506,8 +557,8 @@ V_label <- matrix(1:153,ncol=1)
 for (year in c(2019, 2021:2023)){
   
   X_year <- X[,as.character(year)]
-  fu_year <- fu_adj_all[,as.character(year)]
-  im_year <- im_adj_all[,as.character(year)]
+  fu_year <- fu_adj[,as.character(year)]
+  im_year <- im_adj[,as.character(year)]
   va_year <- va[,as.character(year)]
   A_focus_year <- get(paste0("A_focus_",year))
   Z_20_year <- get(paste0("Z_20_",year))
@@ -533,15 +584,15 @@ for (year in c(2019, 2021:2023)){
                   tol = 1e-15)
   
   Z_2_year <- A_2_year %*% diag(as.vector(as.matrix(X_year)))
-  
-  assign(paste0("Z_2_", year), Z_2_year)
-  
+  # assign(paste0("Z_2_", year), Z_2_year)
   Z_year <- Z_1_year + Z_2_year
   assign(paste0("Z_", year), Z_year)
   
-  A_year <- Z_year %*% solve(diag(as.vector(as.matrix(X_year))))
-  assign(paste0("A_", year), A_year)
-  I_diag <- diag(1,nrow=153)
-  assign(paste0("L_", year), solve(I_diag - A_year))
+  # A_year <- Z_year %*% solve(diag(as.vector(as.matrix(X_year))))
+  # assign(paste0("A_", year), A_year)
+  # I_diag <- diag(1,nrow=153)
+  # assign(paste0("L_", year), solve(I_diag - A_year))
   
 }
+
+fwrite(Z_2023,"Z_2023.csv")
